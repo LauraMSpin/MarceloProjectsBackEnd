@@ -72,8 +72,9 @@ public class ContratosController : ControllerBase
                 s.ServicoNome,
                 s.ValorTotal,
                 s.ContratoId,
-                s.Medicoes.Select(m => new MedicaoDto(
+                s.Medicoes.OrderBy(m => m.Ordem).Select(m => new MedicaoDto(
                     m.Id,
+                    m.Ordem,
                     m.Mes,
                     m.Previsto,
                     m.Realizado,

@@ -36,8 +36,9 @@ public class ServicosController : ControllerBase
                 s.ServicoNome,
                 s.ValorTotal,
                 s.ContratoId,
-                s.Medicoes.Select(m => new MedicaoDto(
+                s.Medicoes.OrderBy(m => m.Ordem).Select(m => new MedicaoDto(
                     m.Id,
+                    m.Ordem,
                     m.Mes,
                     m.Previsto,
                     m.Realizado,
@@ -67,8 +68,9 @@ public class ServicosController : ControllerBase
             servico.ServicoNome,
             servico.ValorTotal,
             servico.ContratoId,
-            servico.Medicoes.Select(m => new MedicaoDto(
+            servico.Medicoes.OrderBy(m => m.Ordem).Select(m => new MedicaoDto(
                 m.Id,
+                m.Ordem,
                 m.Mes,
                 m.Previsto,
                 m.Realizado,
@@ -92,6 +94,7 @@ public class ServicosController : ControllerBase
             Medicoes = dto.Medicoes.Select(m => new Medicao
             {
                 Id = Guid.NewGuid(),
+                Ordem = m.Ordem,
                 Mes = m.Mes,
                 Previsto = m.Previsto,
                 Realizado = m.Realizado,
@@ -108,8 +111,9 @@ public class ServicosController : ControllerBase
             servico.ServicoNome,
             servico.ValorTotal,
             servico.ContratoId,
-            servico.Medicoes.Select(m => new MedicaoDto(
+            servico.Medicoes.OrderBy(m => m.Ordem).Select(m => new MedicaoDto(
                 m.Id,
+                m.Ordem,
                 m.Mes,
                 m.Previsto,
                 m.Realizado,
@@ -142,6 +146,7 @@ public class ServicosController : ControllerBase
         servico.Medicoes = dto.Medicoes.Select(m => new Medicao
         {
             Id = Guid.NewGuid(),
+            Ordem = m.Ordem,
             Mes = m.Mes,
             Previsto = m.Previsto,
             Realizado = m.Realizado,
@@ -168,13 +173,15 @@ public class ServicosController : ControllerBase
             return NotFound();
         }
 
-        var medicoes = servico.Medicoes.ToList();
+        // Ordenar por Ordem para garantir que o índice correto seja atualizado
+        var medicoes = servico.Medicoes.OrderBy(m => m.Ordem).ToList();
         if (medicaoIndex < 0 || medicaoIndex >= medicoes.Count)
         {
             return BadRequest("Índice de medição inválido");
         }
 
         var medicao = medicoes[medicaoIndex];
+        medicao.Ordem = dto.Ordem;
         medicao.Mes = dto.Mes;
         medicao.Previsto = dto.Previsto;
         medicao.Realizado = dto.Realizado;
