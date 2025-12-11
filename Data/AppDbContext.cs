@@ -22,9 +22,13 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Usuario>(entity =>
         {
             entity.HasKey(e => e.Id);
+            entity.Property(e => e.Login).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.SenhaHash).IsRequired().HasMaxLength(500);
+            entity.Property(e => e.Role).IsRequired().HasMaxLength(50);
             entity.Property(e => e.Nome).IsRequired().HasMaxLength(200);
             entity.Property(e => e.Email).IsRequired().HasMaxLength(200);
             entity.Property(e => e.Empresa).HasMaxLength(200);
+            entity.HasIndex(e => e.Login).IsUnique();
             entity.HasIndex(e => e.Email).IsUnique();
         });
 
