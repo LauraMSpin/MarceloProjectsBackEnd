@@ -139,11 +139,18 @@ public class ServicosController : ControllerBase
         servico.Item = dto.Item;
         servico.ServicoNome = dto.Servico;
 
-        // Remover medições antigas
-        _context.Medicoes.RemoveRange(servico.Medicoes);
+        // Remover medições antigas de forma segura
+        var medicoesParaRemover = servico.Medicoes.ToList();
+        foreach (var medicao in medicoesParaRemover)
+        {
+            _context.Medicoes.Remove(medicao);
+        }
+        
+        // Salvar a remoção primeiro
+        await _context.SaveChangesAsync();
 
         // Adicionar novas medições
-        servico.Medicoes = dto.Medicoes.Select(m => new Medicao
+        var novasMedicoes = dto.Medicoes.Select(m => new Medicao
         {
             Id = Guid.NewGuid(),
             Ordem = m.Ordem,
@@ -153,6 +160,11 @@ public class ServicosController : ControllerBase
             Pago = m.Pago,
             ServicoId = servico.Id
         }).ToList();
+
+        foreach (var medicao in novasMedicoes)
+        {
+            _context.Medicoes.Add(medicao);
+        }
 
         servico.ValorTotal = dto.Medicoes.Sum(m => m.Previsto);
 
