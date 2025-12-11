@@ -1,0 +1,6 @@
+@cronograma_atividades_backend_HostAddress = http://localhost:5208
+
+GET {{cronograma_atividades_backend_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
