@@ -13,6 +13,7 @@ public class AppDbContext : DbContext
     public DbSet<Contrato> Contratos => Set<Contrato>();
     public DbSet<Servico> Servicos => Set<Servico>();
     public DbSet<Medicao> Medicoes => Set<Medicao>();
+    public DbSet<ContratoCompartilhado> ContratosCompartilhados => Set<ContratoCompartilhado>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -72,6 +73,25 @@ public class AppDbContext : DbContext
                 .WithMany(s => s.Medicoes)
                 .HasForeignKey(e => e.ServicoId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Configuração ContratoCompartilhado
+        modelBuilder.Entity<ContratoCompartilhado>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            
+            entity.HasOne(e => e.Contrato)
+                .WithMany()
+                .HasForeignKey(e => e.ContratoId)
+                .OnDelete(DeleteBehavior.Cascade);
+            
+            entity.HasOne(e => e.Usuario)
+                .WithMany()
+                .HasForeignKey(e => e.UsuarioId)
+                .OnDelete(DeleteBehavior.Cascade);
+            
+            // Índice único para evitar compartilhamentos duplicados
+            entity.HasIndex(e => new { e.ContratoId, e.UsuarioId }).IsUnique();
         });
     }
 }

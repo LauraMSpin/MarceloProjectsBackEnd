@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using cronograma_atividades_backend.Data;
 using cronograma_atividades_backend.Entities;
 using cronograma_atividades_backend.DTOs;
@@ -8,6 +10,7 @@ namespace cronograma_atividades_backend.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class ContratosController : ControllerBase
 {
     private readonly AppDbContext _context;
@@ -17,18 +20,22 @@ public class ContratosController : ControllerBase
         _context = context;
     }
 
-    [HttpGet]
-    public async Task<ActionResult<IEnumerable<ContratoResumoDto>>> GetContratos([FromQuery] Guid? usuarioId)
+    private Guid? GetUsuarioLogadoId()
     {
-        var query = _context.Contratos.AsQueryable();
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        return userId != null && Guid.TryParse(userId, out var id) ? id : null;
+    }
 
-        if (usuarioId.HasValue)
-        {
-            query = query.Where(c => c.UsuarioId == usuarioId.Value);
-        }
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<ContratoResumoDto>>> GetContratos()
+    {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return Unauthorized();
 
-        var contratos = await query
-            .OrderByDescending(c => c.DataCriacao)
+        // Buscar contratos próprios
+        var contratosProprios = await _context.Contratos
+            .Where(c => c.UsuarioId == usuarioId.Value)
+            .Include(c => c.Usuario)
             .Select(c => new ContratoResumoDto(
                 c.Id,
                 c.Nome,
@@ -37,17 +44,48 @@ public class ContratosController : ControllerBase
                 c.MesInicial,
                 c.AnoInicial,
                 c.DataCriacao,
-                c.UsuarioId
+                c.UsuarioId,
+                c.Usuario.Nome,
+                true,
+                true
             ))
             .ToListAsync();
 
-        return Ok(contratos);
+        // Buscar contratos compartilhados comigo
+        var contratosCompartilhados = await _context.ContratosCompartilhados
+            .Where(cc => cc.UsuarioId == usuarioId.Value)
+            .Include(cc => cc.Contrato)
+                .ThenInclude(c => c.Usuario)
+            .Select(cc => new ContratoResumoDto(
+                cc.Contrato.Id,
+                cc.Contrato.Nome,
+                cc.Contrato.Descricao,
+                cc.Contrato.NumeroMeses,
+                cc.Contrato.MesInicial,
+                cc.Contrato.AnoInicial,
+                cc.Contrato.DataCriacao,
+                cc.Contrato.UsuarioId,
+                cc.Contrato.Usuario.Nome,
+                false,
+                cc.PodeEditar
+            ))
+            .ToListAsync();
+
+        var todos = contratosProprios.Concat(contratosCompartilhados)
+            .OrderByDescending(c => c.DataCriacao)
+            .ToList();
+
+        return Ok(todos);
     }
 
     [HttpGet("{id}")]
     public async Task<ActionResult<ContratoDto>> GetContrato(Guid id)
     {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return Unauthorized();
+
         var contrato = await _context.Contratos
+            .Include(c => c.Usuario)
             .Include(c => c.Servicos)
                 .ThenInclude(s => s.Medicoes)
             .FirstOrDefaultAsync(c => c.Id == id);
@@ -56,6 +94,18 @@ public class ContratosController : ControllerBase
         {
             return NotFound();
         }
+
+        // Verificar se o usuário tem acesso
+        var isProprietario = contrato.UsuarioId == usuarioId.Value;
+        var compartilhamento = await _context.ContratosCompartilhados
+            .FirstOrDefaultAsync(cc => cc.ContratoId == id && cc.UsuarioId == usuarioId.Value);
+
+        if (!isProprietario && compartilhamento == null)
+        {
+            return Forbid();
+        }
+
+        var podeEditar = isProprietario || (compartilhamento?.PodeEditar ?? false);
 
         var dto = new ContratoDto(
             contrato.Id,
@@ -66,6 +116,9 @@ public class ContratosController : ControllerBase
             contrato.AnoInicial,
             contrato.DataCriacao,
             contrato.UsuarioId,
+            contrato.Usuario.Nome,
+            isProprietario,
+            podeEditar,
             contrato.Servicos.Select(s => new ServicoDto(
                 s.Id,
                 s.Item,
@@ -89,6 +142,10 @@ public class ContratosController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<ContratoDto>> CreateContrato(CriarContratoDto dto)
     {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return Unauthorized();
+
+        // Forçar o usuário logado como proprietário
         var contrato = new Contrato
         {
             Id = Guid.NewGuid(),
@@ -97,12 +154,14 @@ public class ContratosController : ControllerBase
             NumeroMeses = dto.NumeroMeses,
             MesInicial = dto.MesInicial,
             AnoInicial = dto.AnoInicial,
-            UsuarioId = dto.UsuarioId,
+            UsuarioId = usuarioId.Value,
             DataCriacao = DateTime.UtcNow
         };
 
         _context.Contratos.Add(contrato);
         await _context.SaveChangesAsync();
+
+        var usuario = await _context.Usuarios.FindAsync(usuarioId.Value);
 
         var result = new ContratoDto(
             contrato.Id,
@@ -113,6 +172,9 @@ public class ContratosController : ControllerBase
             contrato.AnoInicial,
             contrato.DataCriacao,
             contrato.UsuarioId,
+            usuario?.Nome,
+            true,
+            true,
             new List<ServicoDto>()
         );
 
@@ -122,11 +184,24 @@ public class ContratosController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateContrato(Guid id, AtualizarContratoDto dto)
     {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return Unauthorized();
+
         var contrato = await _context.Contratos.FindAsync(id);
 
         if (contrato == null)
         {
             return NotFound();
+        }
+
+        // Verificar permissão de edição
+        var isProprietario = contrato.UsuarioId == usuarioId.Value;
+        var compartilhamento = await _context.ContratosCompartilhados
+            .FirstOrDefaultAsync(cc => cc.ContratoId == id && cc.UsuarioId == usuarioId.Value);
+
+        if (!isProprietario && (compartilhamento == null || !compartilhamento.PodeEditar))
+        {
+            return Forbid();
         }
 
         contrato.Nome = dto.Nome;
@@ -143,6 +218,9 @@ public class ContratosController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteContrato(Guid id)
     {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return Unauthorized();
+
         var contrato = await _context.Contratos.FindAsync(id);
 
         if (contrato == null)
@@ -150,7 +228,145 @@ public class ContratosController : ControllerBase
             return NotFound();
         }
 
+        // Somente o proprietário pode deletar
+        if (contrato.UsuarioId != usuarioId.Value)
+        {
+            return Forbid();
+        }
+
         _context.Contratos.Remove(contrato);
+        await _context.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    // === Endpoints de Compartilhamento ===
+
+    [HttpGet("{id}/compartilhamentos")]
+    public async Task<ActionResult<List<ContratoCompartilhadoDto>>> GetCompartilhamentos(Guid id)
+    {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return Unauthorized();
+
+        var contrato = await _context.Contratos.FindAsync(id);
+        if (contrato == null) return NotFound();
+
+        // Somente o proprietário pode ver compartilhamentos
+        if (contrato.UsuarioId != usuarioId.Value)
+        {
+            return Forbid();
+        }
+
+        var compartilhamentos = await _context.ContratosCompartilhados
+            .Where(cc => cc.ContratoId == id)
+            .Include(cc => cc.Usuario)
+            .Select(cc => new ContratoCompartilhadoDto(
+                cc.Id,
+                cc.UsuarioId,
+                cc.Usuario.Nome,
+                cc.Usuario.Email,
+                cc.PodeEditar,
+                cc.DataCompartilhamento
+            ))
+            .ToListAsync();
+
+        return Ok(compartilhamentos);
+    }
+
+    [HttpPost("{id}/compartilhar")]
+    public async Task<ActionResult<ContratoCompartilhadoDto>> CompartilharContrato(Guid id, CompartilharContratoDto dto)
+    {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return Unauthorized();
+
+        var contrato = await _context.Contratos.FindAsync(id);
+        if (contrato == null) return NotFound();
+
+        // Somente o proprietário pode compartilhar
+        if (contrato.UsuarioId != usuarioId.Value)
+        {
+            return Forbid();
+        }
+
+        // Não pode compartilhar consigo mesmo
+        if (dto.UsuarioId == usuarioId.Value)
+        {
+            return BadRequest(new { message = "Você não pode compartilhar um contrato consigo mesmo" });
+        }
+
+        // Verificar se usuário destino existe
+        var usuarioDestino = await _context.Usuarios.FindAsync(dto.UsuarioId);
+        if (usuarioDestino == null)
+        {
+            return BadRequest(new { message = "Usuário não encontrado" });
+        }
+
+        // Verificar se já está compartilhado
+        var existente = await _context.ContratosCompartilhados
+            .FirstOrDefaultAsync(cc => cc.ContratoId == id && cc.UsuarioId == dto.UsuarioId);
+
+        if (existente != null)
+        {
+            // Atualizar permissão existente
+            existente.PodeEditar = dto.PodeEditar;
+            await _context.SaveChangesAsync();
+
+            return Ok(new ContratoCompartilhadoDto(
+                existente.Id,
+                existente.UsuarioId,
+                usuarioDestino.Nome,
+                usuarioDestino.Email,
+                existente.PodeEditar,
+                existente.DataCompartilhamento
+            ));
+        }
+
+        var compartilhamento = new ContratoCompartilhado
+        {
+            Id = Guid.NewGuid(),
+            ContratoId = id,
+            UsuarioId = dto.UsuarioId,
+            PodeEditar = dto.PodeEditar,
+            DataCompartilhamento = DateTime.UtcNow
+        };
+
+        _context.ContratosCompartilhados.Add(compartilhamento);
+        await _context.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetCompartilhamentos), new { id }, new ContratoCompartilhadoDto(
+            compartilhamento.Id,
+            compartilhamento.UsuarioId,
+            usuarioDestino.Nome,
+            usuarioDestino.Email,
+            compartilhamento.PodeEditar,
+            compartilhamento.DataCompartilhamento
+        ));
+    }
+
+    [HttpDelete("{id}/compartilhar/{usuarioDestinoId}")]
+    public async Task<IActionResult> RemoverCompartilhamento(Guid id, Guid usuarioDestinoId)
+    {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return Unauthorized();
+
+        var contrato = await _context.Contratos.FindAsync(id);
+        if (contrato == null) return NotFound();
+
+        // Somente o proprietário pode remover compartilhamentos
+        if (contrato.UsuarioId != usuarioId.Value)
+        {
+            return Forbid();
+        }
+
+        var compartilhamento = await _context.ContratosCompartilhados
+            .FirstOrDefaultAsync(cc => cc.ContratoId == id && cc.UsuarioId == usuarioDestinoId);
+
+        if (compartilhamento == null)
+        {
+            return NotFound();
+        }
+
+        _context.ContratosCompartilhados.Remove(compartilhamento);
         await _context.SaveChangesAsync();
 
         return NoContent();

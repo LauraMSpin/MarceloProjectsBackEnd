@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using cronograma_atividades_backend.Data;
 using cronograma_atividades_backend.Entities;
 using cronograma_atividades_backend.DTOs;
@@ -8,6 +10,7 @@ namespace cronograma_atividades_backend.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class ServicosController : ControllerBase
 {
     private readonly AppDbContext _context;
@@ -17,9 +20,42 @@ public class ServicosController : ControllerBase
         _context = context;
     }
 
+    private Guid? GetUsuarioLogadoId()
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        return userId != null && Guid.TryParse(userId, out var id) ? id : null;
+    }
+
+    private async Task<bool> TemAcessoContrato(Guid contratoId, bool precisaEditar = false)
+    {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return false;
+
+        var contrato = await _context.Contratos.FindAsync(contratoId);
+        if (contrato == null) return false;
+
+        if (contrato.UsuarioId == usuarioId.Value) return true;
+
+        var compartilhamento = await _context.ContratosCompartilhados
+            .FirstOrDefaultAsync(cc => cc.ContratoId == contratoId && cc.UsuarioId == usuarioId.Value);
+
+        if (compartilhamento == null) return false;
+        if (precisaEditar && !compartilhamento.PodeEditar) return false;
+
+        return true;
+    }
+
     [HttpGet]
     public async Task<ActionResult<IEnumerable<ServicoDto>>> GetServicos([FromQuery] Guid? contratoId)
     {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return Unauthorized();
+
+        if (contratoId.HasValue && !await TemAcessoContrato(contratoId.Value))
+        {
+            return Forbid();
+        }
+
         var query = _context.Servicos
             .Include(s => s.Medicoes)
             .AsQueryable();
@@ -53,6 +89,9 @@ public class ServicosController : ControllerBase
     [HttpGet("{id}")]
     public async Task<ActionResult<ServicoDto>> GetServico(Guid id)
     {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return Unauthorized();
+
         var servico = await _context.Servicos
             .Include(s => s.Medicoes)
             .FirstOrDefaultAsync(s => s.Id == id);
@@ -60,6 +99,11 @@ public class ServicosController : ControllerBase
         if (servico == null)
         {
             return NotFound();
+        }
+
+        if (!await TemAcessoContrato(servico.ContratoId))
+        {
+            return Forbid();
         }
 
         var dto = new ServicoDto(
@@ -84,6 +128,14 @@ public class ServicosController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<ServicoDto>> CreateServico(CriarServicoDto dto)
     {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return Unauthorized();
+
+        if (!await TemAcessoContrato(dto.ContratoId, precisaEditar: true))
+        {
+            return Forbid();
+        }
+
         var servico = new Servico
         {
             Id = Guid.NewGuid(),
@@ -127,6 +179,9 @@ public class ServicosController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateServico(Guid id, AtualizarServicoDto dto)
     {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return Unauthorized();
+
         var servico = await _context.Servicos
             .Include(s => s.Medicoes)
             .FirstOrDefaultAsync(s => s.Id == id);
@@ -134,6 +189,11 @@ public class ServicosController : ControllerBase
         if (servico == null)
         {
             return NotFound();
+        }
+
+        if (!await TemAcessoContrato(servico.ContratoId, precisaEditar: true))
+        {
+            return Forbid();
         }
 
         servico.Item = dto.Item;
@@ -176,6 +236,9 @@ public class ServicosController : ControllerBase
     [HttpPut("{id}/medicoes/{medicaoIndex}")]
     public async Task<IActionResult> UpdateMedicao(Guid id, int medicaoIndex, AtualizarMedicaoDto dto)
     {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return Unauthorized();
+
         var servico = await _context.Servicos
             .Include(s => s.Medicoes)
             .FirstOrDefaultAsync(s => s.Id == id);
@@ -183,6 +246,11 @@ public class ServicosController : ControllerBase
         if (servico == null)
         {
             return NotFound();
+        }
+
+        if (!await TemAcessoContrato(servico.ContratoId, precisaEditar: true))
+        {
+            return Forbid();
         }
 
         // Ordenar por Ordem para garantir que o índice correto seja atualizado
@@ -209,11 +277,19 @@ public class ServicosController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteServico(Guid id)
     {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return Unauthorized();
+
         var servico = await _context.Servicos.FindAsync(id);
 
         if (servico == null)
         {
             return NotFound();
+        }
+
+        if (!await TemAcessoContrato(servico.ContratoId, precisaEditar: true))
+        {
+            return Forbid();
         }
 
         _context.Servicos.Remove(servico);
