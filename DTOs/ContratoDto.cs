@@ -12,7 +12,10 @@ public record ContratoDto(
     string? NomeProprietario,
     bool IsProprietario,
     bool PodeEditar,
-    List<ServicoDto> Servicos
+    decimal PercentualReajuste,
+    int? MesInicioReajuste,
+    List<ServicoDto> Servicos,
+    List<PagamentoMensalDto> PagamentosMensais
 );
 
 public record ContratoResumoDto(
@@ -26,7 +29,9 @@ public record ContratoResumoDto(
     Guid UsuarioId,
     string? NomeProprietario,
     bool IsProprietario,
-    bool PodeEditar
+    bool PodeEditar,
+    decimal PercentualReajuste,
+    int? MesInicioReajuste
 );
 
 public record CriarContratoDto(
@@ -35,7 +40,9 @@ public record CriarContratoDto(
     int NumeroMeses,
     int MesInicial,
     int AnoInicial,
-    Guid UsuarioId
+    Guid UsuarioId,
+    decimal PercentualReajuste = 0,
+    int? MesInicioReajuste = null
 );
 
 public record AtualizarContratoDto(
@@ -43,7 +50,9 @@ public record AtualizarContratoDto(
     string Descricao,
     int NumeroMeses,
     int MesInicial,
-    int AnoInicial
+    int AnoInicial,
+    decimal PercentualReajuste = 0,
+    int? MesInicioReajuste = null
 );
 
 public record CompartilharContratoDto(

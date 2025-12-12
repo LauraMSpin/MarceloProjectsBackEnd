@@ -9,6 +9,10 @@ public class Contrato
     public int MesInicial { get; set; }
     public int AnoInicial { get; set; }
     public DateTime DataCriacao { get; set; }
+    
+    // Campos de reajuste
+    public decimal PercentualReajuste { get; set; } = 0;
+    public int? MesInicioReajuste { get; set; } // 1 = primeiro mês do contrato
 
     // Chave estrangeira
     public Guid UsuarioId { get; set; }
@@ -16,4 +20,5 @@ public class Contrato
 
     // Navegação
     public ICollection<Servico> Servicos { get; set; } = new List<Servico>();
+    public ICollection<PagamentoMensal> PagamentosMensais { get; set; } = new List<PagamentoMensal>();
 }

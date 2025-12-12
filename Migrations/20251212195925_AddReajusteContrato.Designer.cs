@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using cronograma_atividades_backend.Data;
@@ -11,9 +12,11 @@ using cronograma_atividades_backend.Data;
 namespace cronograma_atividades_backend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251212195925_AddReajusteContrato")]
+    partial class AddReajusteContrato
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -108,6 +111,10 @@ namespace cronograma_atividades_backend.Migrations
                     b.Property<int>("Ordem")
                         .HasColumnType("integer");
 
+                    b.Property<decimal>("Pago")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
                     b.Property<decimal>("Previsto")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
@@ -124,35 +131,6 @@ namespace cronograma_atividades_backend.Migrations
                     b.HasIndex("ServicoId");
 
                     b.ToTable("Medicoes");
-                });
-
-            modelBuilder.Entity("cronograma_atividades_backend.Entities.PagamentoMensal", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ContratoId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Mes")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<int>("Ordem")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("Valor")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ContratoId", "Ordem")
-                        .IsUnique();
-
-                    b.ToTable("PagamentosMensais");
                 });
 
             modelBuilder.Entity("cronograma_atividades_backend.Entities.Servico", b =>
@@ -278,17 +256,6 @@ namespace cronograma_atividades_backend.Migrations
                     b.Navigation("Servico");
                 });
 
-            modelBuilder.Entity("cronograma_atividades_backend.Entities.PagamentoMensal", b =>
-                {
-                    b.HasOne("cronograma_atividades_backend.Entities.Contrato", "Contrato")
-                        .WithMany("PagamentosMensais")
-                        .HasForeignKey("ContratoId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Contrato");
-                });
-
             modelBuilder.Entity("cronograma_atividades_backend.Entities.Servico", b =>
                 {
                     b.HasOne("cronograma_atividades_backend.Entities.Contrato", "Contrato")
@@ -302,8 +269,6 @@ namespace cronograma_atividades_backend.Migrations
 
             modelBuilder.Entity("cronograma_atividades_backend.Entities.Contrato", b =>
                 {
-                    b.Navigation("PagamentosMensais");
-
                     b.Navigation("Servicos");
                 });
 

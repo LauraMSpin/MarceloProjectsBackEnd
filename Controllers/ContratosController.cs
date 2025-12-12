@@ -47,7 +47,9 @@ public class ContratosController : ControllerBase
                 c.UsuarioId,
                 c.Usuario.Nome,
                 true,
-                true
+                true,
+                c.PercentualReajuste,
+                c.MesInicioReajuste
             ))
             .ToListAsync();
 
@@ -67,7 +69,9 @@ public class ContratosController : ControllerBase
                 cc.Contrato.UsuarioId,
                 cc.Contrato.Usuario.Nome,
                 false,
-                cc.PodeEditar
+                cc.PodeEditar,
+                cc.Contrato.PercentualReajuste,
+                cc.Contrato.MesInicioReajuste
             ))
             .ToListAsync();
 
@@ -88,6 +92,7 @@ public class ContratosController : ControllerBase
             .Include(c => c.Usuario)
             .Include(c => c.Servicos)
                 .ThenInclude(s => s.Medicoes)
+            .Include(c => c.PagamentosMensais)
             .FirstOrDefaultAsync(c => c.Id == id);
 
         if (contrato == null)
@@ -119,6 +124,8 @@ public class ContratosController : ControllerBase
             contrato.Usuario.Nome,
             isProprietario,
             podeEditar,
+            contrato.PercentualReajuste,
+            contrato.MesInicioReajuste,
             contrato.Servicos.Select(s => new ServicoDto(
                 s.Id,
                 s.Item,
@@ -130,9 +137,14 @@ public class ContratosController : ControllerBase
                     m.Ordem,
                     m.Mes,
                     m.Previsto,
-                    m.Realizado,
-                    m.Pago
+                    m.Realizado
                 )).ToList()
+            )).ToList(),
+            contrato.PagamentosMensais.OrderBy(p => p.Ordem).Select(p => new PagamentoMensalDto(
+                p.Id,
+                p.Ordem,
+                p.Mes,
+                p.Valor
             )).ToList()
         );
 
@@ -155,7 +167,9 @@ public class ContratosController : ControllerBase
             MesInicial = dto.MesInicial,
             AnoInicial = dto.AnoInicial,
             UsuarioId = usuarioId.Value,
-            DataCriacao = DateTime.UtcNow
+            DataCriacao = DateTime.UtcNow,
+            PercentualReajuste = dto.PercentualReajuste,
+            MesInicioReajuste = dto.MesInicioReajuste
         };
 
         _context.Contratos.Add(contrato);
@@ -175,7 +189,10 @@ public class ContratosController : ControllerBase
             usuario?.Nome,
             true,
             true,
-            new List<ServicoDto>()
+            contrato.PercentualReajuste,
+            contrato.MesInicioReajuste,
+            new List<ServicoDto>(),
+            new List<PagamentoMensalDto>()
         );
 
         return CreatedAtAction(nameof(GetContrato), new { id = contrato.Id }, result);
@@ -209,6 +226,8 @@ public class ContratosController : ControllerBase
         contrato.NumeroMeses = dto.NumeroMeses;
         contrato.MesInicial = dto.MesInicial;
         contrato.AnoInicial = dto.AnoInicial;
+        contrato.PercentualReajuste = dto.PercentualReajuste;
+        contrato.MesInicioReajuste = dto.MesInicioReajuste;
 
         await _context.SaveChangesAsync();
 
@@ -367,6 +386,79 @@ public class ContratosController : ControllerBase
         }
 
         _context.ContratosCompartilhados.Remove(compartilhamento);
+        await _context.SaveChangesAsync();
+
+        return NoContent();
+    }
+
+    // ===== ENDPOINTS PARA PAGAMENTOS MENSAIS =====
+
+    [HttpGet("{id}/pagamentos")]
+    public async Task<ActionResult<List<PagamentoMensalDto>>> GetPagamentos(Guid id)
+    {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return Unauthorized();
+
+        // Verificar acesso ao contrato
+        var contrato = await _context.Contratos.FindAsync(id);
+        if (contrato == null) return NotFound();
+
+        var temAcesso = contrato.UsuarioId == usuarioId.Value ||
+            await _context.ContratosCompartilhados.AnyAsync(cc => cc.ContratoId == id && cc.UsuarioId == usuarioId.Value);
+
+        if (!temAcesso) return Forbid();
+
+        var pagamentos = await _context.PagamentosMensais
+            .Where(p => p.ContratoId == id)
+            .OrderBy(p => p.Ordem)
+            .Select(p => new PagamentoMensalDto(p.Id, p.Ordem, p.Mes, p.Valor))
+            .ToListAsync();
+
+        return Ok(pagamentos);
+    }
+
+    [HttpPut("{id}/pagamentos/{ordem}")]
+    public async Task<IActionResult> AtualizarPagamento(Guid id, int ordem, AtualizarPagamentoMensalDto dto)
+    {
+        var usuarioId = GetUsuarioLogadoId();
+        if (usuarioId == null) return Unauthorized();
+
+        // Verificar acesso ao contrato
+        var contrato = await _context.Contratos.FindAsync(id);
+        if (contrato == null) return NotFound();
+
+        var isProprietario = contrato.UsuarioId == usuarioId.Value;
+        var compartilhamento = await _context.ContratosCompartilhados
+            .FirstOrDefaultAsync(cc => cc.ContratoId == id && cc.UsuarioId == usuarioId.Value);
+
+        if (!isProprietario && (compartilhamento == null || !compartilhamento.PodeEditar))
+        {
+            return Forbid();
+        }
+
+        var pagamento = await _context.PagamentosMensais
+            .FirstOrDefaultAsync(p => p.ContratoId == id && p.Ordem == ordem);
+
+        if (pagamento == null)
+        {
+            // Criar novo pagamento
+            pagamento = new PagamentoMensal
+            {
+                Id = Guid.NewGuid(),
+                ContratoId = id,
+                Ordem = ordem,
+                Mes = dto.Mes,
+                Valor = dto.Valor
+            };
+            _context.PagamentosMensais.Add(pagamento);
+        }
+        else
+        {
+            // Atualizar existente
+            pagamento.Mes = dto.Mes;
+            pagamento.Valor = dto.Valor;
+        }
+
         await _context.SaveChangesAsync();
 
         return NoContent();

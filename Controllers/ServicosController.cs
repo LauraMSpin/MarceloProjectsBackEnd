@@ -77,8 +77,7 @@ public class ServicosController : ControllerBase
                     m.Ordem,
                     m.Mes,
                     m.Previsto,
-                    m.Realizado,
-                    m.Pago
+                    m.Realizado
                 )).ToList()
             ))
             .ToListAsync();
@@ -117,8 +116,7 @@ public class ServicosController : ControllerBase
                 m.Ordem,
                 m.Mes,
                 m.Previsto,
-                m.Realizado,
-                m.Pago
+                m.Realizado
             )).ToList()
         );
 
@@ -149,8 +147,7 @@ public class ServicosController : ControllerBase
                 Ordem = m.Ordem,
                 Mes = m.Mes,
                 Previsto = m.Previsto,
-                Realizado = m.Realizado,
-                Pago = m.Pago
+                Realizado = m.Realizado
             }).ToList()
         };
 
@@ -168,8 +165,7 @@ public class ServicosController : ControllerBase
                 m.Ordem,
                 m.Mes,
                 m.Previsto,
-                m.Realizado,
-                m.Pago
+                m.Realizado
             )).ToList()
         );
 
@@ -217,7 +213,6 @@ public class ServicosController : ControllerBase
             Mes = m.Mes,
             Previsto = m.Previsto,
             Realizado = m.Realizado,
-            Pago = m.Pago,
             ServicoId = servico.Id
         }).ToList();
 
@@ -265,7 +260,6 @@ public class ServicosController : ControllerBase
         medicao.Mes = dto.Mes;
         medicao.Previsto = dto.Previsto;
         medicao.Realizado = dto.Realizado;
-        medicao.Pago = dto.Pago;
 
         servico.ValorTotal = medicoes.Sum(m => m.Previsto);
 

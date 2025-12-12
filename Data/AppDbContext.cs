@@ -13,6 +13,7 @@ public class AppDbContext : DbContext
     public DbSet<Contrato> Contratos => Set<Contrato>();
     public DbSet<Servico> Servicos => Set<Servico>();
     public DbSet<Medicao> Medicoes => Set<Medicao>();
+    public DbSet<PagamentoMensal> PagamentosMensais => Set<PagamentoMensal>();
     public DbSet<ContratoCompartilhado> ContratosCompartilhados => Set<ContratoCompartilhado>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -67,12 +68,27 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Mes).IsRequired().HasMaxLength(20);
             entity.Property(e => e.Previsto).HasPrecision(18, 2);
             entity.Property(e => e.Realizado).HasPrecision(18, 2);
-            entity.Property(e => e.Pago).HasPrecision(18, 2);
             
             entity.HasOne(e => e.Servico)
                 .WithMany(s => s.Medicoes)
                 .HasForeignKey(e => e.ServicoId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Configuração PagamentoMensal
+        modelBuilder.Entity<PagamentoMensal>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Mes).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.Valor).HasPrecision(18, 2);
+            
+            entity.HasOne(e => e.Contrato)
+                .WithMany(c => c.PagamentosMensais)
+                .HasForeignKey(e => e.ContratoId)
+                .OnDelete(DeleteBehavior.Cascade);
+            
+            // Índice único para evitar pagamentos duplicados no mesmo mês
+            entity.HasIndex(e => new { e.ContratoId, e.Ordem }).IsUnique();
         });
 
         // Configuração ContratoCompartilhado
